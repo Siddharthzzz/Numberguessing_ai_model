@@ -1,204 +1,156 @@
-// --- Configuration and Elements ---
+// --- Canvas Setup ---
 const canvas = document.getElementById('drawingCanvas');
 const ctx = canvas.getContext('2d');
 
 const clearBtn = document.getElementById('clearBtn');
 const predictBtn = document.getElementById('predictBtn');
+const resultBox = document.getElementById('resultBox');
 const predictionDisplay = document.getElementById('prediction');
 const confidenceDisplay = document.getElementById('confidence');
-const messageArea = document.getElementById('messageArea');
+const errorMessage = document.getElementById('errorMessage');
 
-// --- Drawing State Setup ---
+// --- IMPORTANT: API ENDPOINT ---
+// This is the address of your Python Flask server.
+// For local testing, it must be http://127.0.0.1:5000/predict
+const apiEndpoint = 'http://127.0.0.1:5000/predict';
+
+// --- INITIALIZE CANVAS ---
 let isDrawing = false;
+let hasDrawn = false;
 let lastX = 0;
 let lastY = 0;
 
-// Set up the drawing style: Thick white line for the 'number' on black canvas
-ctx.lineWidth = 20;       
-ctx.lineCap = 'round';    
-ctx.strokeStyle = '#ffffff'; 
-
-// --- Utility Functions ---
-
-/**
- * Displays a temporary error message in the message area.
- * @param {string} text - The message to display.
- */
-function showMessage(text) {
-    // Clear existing messages
-    messageArea.innerHTML = ''; 
-
-    const message = document.createElement('div');
-    message.className = 'message-error';
-    message.innerHTML = `<i class="fas fa-exclamation-triangle mr-2"></i> ${text}`;
-    messageArea.appendChild(message);
-
-    // Remove the message after 7 seconds
-    setTimeout(() => message.remove(), 7000); 
+function initializeCanvas() {
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.lineWidth = 20;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#FFFFFF';
+    hasDrawn = false;
 }
 
-// --- Drawing Functionality ---
-
-/**
- * Draws a line segment between the last recorded position and the current position.
- * @param {Event} e - Mouse or Touch event.
- */
+// --- DRAWING FUNCTIONS ---
 function draw(e) {
     if (!isDrawing) return;
 
-    // Determine if it's a mouse or touch event
-    const clientX = e.clientX || e.touches[0].clientX;
-    const clientY = e.clientY || e.touches[0].clientY;
-
-    // Get position relative to the canvas
+    e.preventDefault();
     const rect = canvas.getBoundingClientRect();
-    const x = clientX - rect.left;
-    const y = clientY - rect.top;
+    const x = (e.clientX || e.touches[0].clientX) - rect.left;
+    const y = (e.clientY || e.touches[0].clientY) - rect.top;
 
     ctx.beginPath();
-    ctx.moveTo(lastX, lastY); 
-    ctx.lineTo(x, y);         
+    ctx.moveTo(lastX, lastY);
+    ctx.lineTo(x, y);
     ctx.stroke();
+    [lastX, lastY] = [x, y];
+    hasDrawn = true;
+}
 
-    // Update last position for the next segment
+function startDrawing(e) {
+    // Only draw with the left mouse button
+    if (e.button && e.button !== 0) return;
+
+    isDrawing = true;
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX || e.touches[0].clientX) - rect.left;
+    const y = (e.clientY || e.touches[0].clientY) - rect.top;
     [lastX, lastY] = [x, y];
 }
 
-/**
- * Starts the drawing process (mousedown or touchstart).
- * @param {Event} e - Mouse or Touch event.
- */
-function startDrawing(e) {
-    e.preventDefault(); 
-    // Only proceed if it's a touch event OR a left mouse button click (button === 0)
-    if (e.touches || (e.button === 0)) { 
-        isDrawing = true;
+const stopDrawing = () => { isDrawing = false; };
 
-        const clientX = e.clientX || e.touches[0].clientX;
-        const clientY = e.clientY || e.touches[0].clientY;
-
-        const rect = canvas.getBoundingClientRect();
-        const x = clientX - rect.left;
-        const y = clientY - rect.top;
-
-        [lastX, lastY] = [x, y];
-        draw(e); 
-    }
-}
-
-/**
- * Stops the drawing process.
- */
-function stopDrawing() {
-    isDrawing = false;
-}
-
-// Event Listeners for Drawing (Mouse & Touch)
+// --- EVENT LISTENERS ---
 canvas.addEventListener('mousedown', startDrawing);
 canvas.addEventListener('mousemove', draw);
 canvas.addEventListener('mouseup', stopDrawing);
 canvas.addEventListener('mouseout', stopDrawing);
-
-canvas.addEventListener('touchstart', startDrawing);
-canvas.addEventListener('touchmove', draw);
+canvas.addEventListener('touchstart', startDrawing, { passive: false });
+canvas.addEventListener('touchmove', draw, { passive: false });
 canvas.addEventListener('touchend', stopDrawing);
 
-
-// --- Control Event Listeners ---
-
-// Clear the canvas and results
+// --- CONTROL BUTTONS ---
 clearBtn.addEventListener('click', () => {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    // Re-fill the canvas with black background 
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(0, 0, canvas.width, canvas.height); 
-    
-    // Reset the result display and messages
+    initializeCanvas();
     predictionDisplay.textContent = '-';
     confidenceDisplay.textContent = '-';
-    messageArea.innerHTML = '';
+    resultBox.classList.remove('success', 'fail');
+    hideError();
 });
 
-// Trigger prediction
 predictBtn.addEventListener('click', () => {
-    // Check if drawing area is actually used (simple check: if any pixel is not black)
-    const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-    let isBlank = true;
-    // Check every 4th pixel (R component)
-    for (let i = 0; i < data.length; i += 4) {
-        if (data[i] !== 0 || data[i+1] !== 0 || data[i+2] !== 0) { 
-            isBlank = false;
-            break;
-        }
-    }
-
-    if (isBlank) {
-        showMessage('Please draw a number before clicking Guess!');
+    if (!hasDrawn) {
+        showError('Please draw a digit first before guessing!');
         return;
     }
-
-    const imageDataURL = canvas.toDataURL('image/png'); 
+    const imageDataURL = canvas.toDataURL('image/png');
     sendToModelBackend(imageDataURL);
 });
 
-// --- Backend/API Interaction (Placeholder Function with Exponential Backoff) ---
-async function sendToModelBackend(imageData) {
-    // ⚠️ IMPORTANT: YOU MUST REPLACE THIS WITH YOUR DEPLOYED MODEL'S PUBLIC URL
-    const apiEndpoint = 'YOUR_BACKEND_API_ENDPOINT/predict'; 
+// --- API INTERACTION ---
+async function sendToModelBackend(imageData, retries = 3, delay = 1000) {
+    showLoading();
+    hideError();
 
-    // Visual feedback while waiting
-    predictionDisplay.textContent = '...';
-    confidenceDisplay.textContent = '...';
-    messageArea.innerHTML = '';
-
-    const maxRetries = 3;
-    let attempt = 0;
-
-    while (attempt < maxRetries) {
-        attempt++;
+    for (let i = 0; i < retries; i++) {
         try {
             const response = await fetch(apiEndpoint, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ image: imageData })
             });
 
             if (!response.ok) {
-                // Throw an error to trigger the catch block and retry logic
-                throw new Error(`HTTP error! Status: ${response.status}`);
+                const errorData = await response.json().catch(() => ({ error: 'Server returned an invalid response.' }));
+                throw new Error(`Server error: ${errorData.error || response.statusText}`);
             }
 
             const result = await response.json();
-            
-            // Assuming result is { "prediction": 7, "confidence": 0.985 }
-            const predictedNumber = result.prediction || '?';
-            const confidenceScore = result.confidence ? (result.confidence * 100).toFixed(2) : '??';
-
-            predictionDisplay.textContent = predictedNumber;
-            confidenceDisplay.textContent = `${confidenceScore}%`;
+            displayPrediction(result.prediction, result.confidence);
             return; // Success, exit the loop
-
         } catch (error) {
-            console.error(`Attempt ${attempt} failed:`, error);
-            
-            if (attempt < maxRetries) {
-                const delay = Math.pow(2, attempt) * 1000; // Exponential backoff (2s, 4s, 8s)
-                predictionDisplay.textContent = `...Retrying (${attempt}/${maxRetries})...`;
-                await new Promise(resolve => setTimeout(resolve, delay));
+            console.error(`Attempt ${i + 1} failed:`, error);
+            if (i === retries - 1) {
+                // Last attempt failed
+                displayFailState(`Failed to connect to ML server. Is it running?`);
             } else {
-                // Final failure
-                predictionDisplay.textContent = 'FAIL';
-                confidenceDisplay.textContent = 'Check Console';
-                showMessage(`Failed to connect to ML server after ${maxRetries} tries. Update API endpoint.`);
+                // Wait before retrying
+                await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, i)));
             }
         }
     }
 }
 
-// Initial setup: ensure the canvas starts black
-window.onload = function() {
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-};
+// --- UI UPDATE FUNCTIONS ---
+function showLoading() {
+    predictionDisplay.textContent = '...';
+    confidenceDisplay.textContent = '...';
+    resultBox.classList.remove('success', 'fail');
+}
+
+function displayPrediction(prediction, confidence) {
+    predictionDisplay.textContent = prediction;
+    confidenceDisplay.textContent = `${(confidence * 100).toFixed(2)}%`;
+    resultBox.classList.add('success');
+    resultBox.classList.remove('fail');
+}
+
+function displayFailState(message) {
+    predictionDisplay.textContent = 'FAIL';
+    confidenceDisplay.textContent = 'Check Console';
+    resultBox.classList.add('fail');
+    resultBox.classList.remove('success');
+    showError(message);
+}
+
+function showError(message) {
+    errorMessage.textContent = message;
+    errorMessage.style.display = 'block';
+}
+
+function hideError() {
+    errorMessage.style.display = 'none';
+}
+
+// --- INITIALIZE ---
+window.onload = initializeCanvas;
+
