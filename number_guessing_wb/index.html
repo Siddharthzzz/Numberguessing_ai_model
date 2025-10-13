@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Digit Recognizer - Draw & Guess</title>
+    <!-- Load Tailwind CSS for modern utility styling on top of custom CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="style.css"> 
+    <style>
+        /* Custom font import */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <!-- Title and description -->
+        <h1 class="text-4xl font-extrabold mb-2 text-indigo-100">Digit AI Playground</h1>
+        <p class="text-indigo-300 mb-6">Draw a single digit (0-9). Let the machine guess!</p>
+        
+        <!-- The Canvas for drawing -->
+        <canvas id="drawingCanvas" width="280" height="280"></canvas>
+        
+        <!-- Control buttons -->
+        <div class="controls">
+            <button id="predictBtn" class="action-btn predict-btn">
+                <i class="fas fa-magic mr-2"></i> Guess
+            </button>
+            <button id="clearBtn" class="action-btn clear-btn">
+                <i class="fas fa-eraser mr-2"></i> Clear
+            </button>
+        </div>
+
+        <!-- Prediction Result Box -->
+        <div id="resultBox" class="result-box mt-8 p-5 rounded-lg border-2 border-indigo-500 shadow-xl">
+            <div class="flex justify-between items-center">
+                <p class="text-xl font-semibold text-indigo-100">Prediction:</p>
+                <span id="prediction" class="text-5xl font-extrabold text-green-400">-</span>
+            </div>
+            <div class="flex justify-between items-center mt-2">
+                <p class="text-lg text-indigo-300">Confidence:</p>
+                <span id="confidence" class="text-2xl font-bold text-yellow-400">-</span>
+            </div>
+            <!-- Dynamic message for API errors/warnings -->
+            <div id="messageArea" class="mt-4"></div> 
+        </div>
+
+        <p class="text-xs text-indigo-400 mt-6">
+            <i class="fas fa-link mr-1"></i> Frontend hosted via GitHub Pages, Backend must be deployed publicly.
+        </p>
+    </div>
+
+    <!-- Linking the JavaScript file for logic -->
+    <script src="script.js"></script>
+    <!-- FontAwesome for icons -->
+    <script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script>
+</body>
+</html>
