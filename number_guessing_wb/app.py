@@ -8,11 +8,8 @@ import torch
 import torch.nn as nn
 from torchvision import transforms
 
-# --- FLASK APP SETUP ---
-app = Flask(__name__)
-CORS(app)
-
 # --- PYTORCH MODEL CLASS DEFINITION ---
+# This MUST be the exact same architecture as the model you trained
 class MNISTmodel(nn.Module):
     def __init__(self, input_shape: int, output_shape: int, hidden_units: int):
         super().__init__()
@@ -44,78 +41,73 @@ class MNISTmodel(nn.Module):
         x = self.classifier(x)
         return x
 
+# --- FLASK APP SETUP ---
+app = Flask(__name__)
+CORS(app)  # This enables cross-origin requests
+
 # --- MODEL AND TRANSFORM SETUP ---
-MODEL_FILE_NAME = 'model.pth'
-MODEL_LOADED = False
-device = torch.device('cpu')
+MODEL = None
+MODEL_FILE_NAME = 'model.pth' # Use the corrected model filename
+TRANSFORM = None
 
-try:
-    MODEL = MNISTmodel(input_shape=1, output_shape=10, hidden_units=128)
-    MODEL.load_state_dict(torch.load(MODEL_FILE_NAME, map_location=device))
-    MODEL.eval()
-    print(f"✨ PyTorch Model '{MODEL_FILE_NAME}' loaded successfully!")
-    MODEL_LOADED = True
-except FileNotFoundError:
-    print(f"⚠️ ERROR: Model file '{MODEL_FILE_NAME}' not found.")
-except Exception as e:
-    print(f"⚠️ ERROR: An unexpected error occurred while loading the model: {e}")
-
-TRANSFORM = transforms.Compose([
-    transforms.Grayscale(num_output_channels=1),
-    transforms.Resize((28, 28)),
-    transforms.ToTensor(),
-    transforms.Normalize((0.1307,), (0.3081,))
-])
+def load_model():
+    """Load the PyTorch model and define transformations."""
+    global MODEL, TRANSFORM
+    try:
+        device = torch.device('cpu')
+        MODEL = MNISTmodel(input_shape=1, output_shape=10, hidden_units=128)
+        # CRUCIAL: Use weights_only=False to load the model correctly
+        MODEL.load_state_dict(torch.load(MODEL_FILE_NAME, map_location=device, weights_only=False))
+        MODEL.eval()
+        
+        TRANSFORM = transforms.Compose([
+            transforms.Grayscale(num_output_channels=1),
+            transforms.Resize((28, 28)),
+            transforms.ToTensor(),
+            transforms.Normalize((0.1307,), (0.3081,))
+        ])
+        print(f"✨ PyTorch Model '{MODEL_FILE_NAME}' loaded successfully!")
+        return True
+    except Exception as e:
+        print(f"⚠️ ERROR: An unexpected error occurred while loading the model: {e}")
+        return False
 
 # --- API ENDPOINT ---
 @app.route('/predict', methods=['POST'])
 def predict():
-    print("\n--- Received a new prediction request ---")
-    if not MODEL_LOADED:
-        print("❌ ERROR: Model is not loaded.")
-        return jsonify({'error': 'Model is not loaded, check server logs.'}), 500
+    """Receives image data, processes it, and returns a prediction."""
+    if not MODEL or not TRANSFORM:
+        return jsonify({'error': 'Model is not loaded.'}), 500
 
-    print("1. Getting image data from request...")
     data = request.get_json()
     if not data or 'image' not in data:
-        print("❌ ERROR: No image data in request.")
         return jsonify({'error': 'No image data found in request.'}), 400
 
-    print("2. Decoding Base64 image...")
     try:
+        # Decode the Base64 image
         image_data = base64.b64decode(data['image'].split(',')[1])
         image = Image.open(BytesIO(image_data))
-        # Convert image to grayscale to handle potential alpha channel from canvas
-        image = image.convert('L')
-        print("   ✅ Image decoded and converted to grayscale successfully.")
-    except Exception as e:
-        print(f"❌ ERROR: Invalid image data: {e}")
-        return jsonify({'error': f'Invalid image data: {e}'}), 400
 
-    print("3. Preprocessing image for PyTorch...")
-    with torch.no_grad():
-        try:
+        # Preprocess the image for the model
+        with torch.no_grad():
             transformed_image = TRANSFORM(image).unsqueeze(0)
-            print(f"   ✅ Image transformed. Tensor shape: {transformed_image.shape}")
-
-            print("4. Making prediction...")
+            
+            # Make a prediction
             output = MODEL(transformed_image)
-            print("   ✅ Prediction output received from model.")
-
             probabilities = torch.nn.functional.softmax(output, dim=1)
             confidence, predicted_class = torch.max(probabilities, 1)
-            print(f"   ✅ Prediction: {predicted_class.item()}, Confidence: {confidence.item():.4f}")
 
-        except Exception as e:
-            print(f"❌ ERROR during model prediction: {e}")
-            return jsonify({'error': 'Failed during model inference.'}), 500
+            response = {
+                'prediction': predicted_class.item(),
+                'confidence': confidence.item()
+            }
+            return jsonify(response)
 
-    print("5. Sending JSON response back to browser.")
-    return jsonify({
-        'prediction': predicted_class.item(),
-        'confidence': confidence.item()
-    })
+    except Exception as e:
+        print(f"Prediction error: {e}")
+        return jsonify({'error': 'Failed to process the image.'}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    if load_model():
+        app.run(host='0.0.0.0', port=5000)
 
